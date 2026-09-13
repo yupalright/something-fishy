@@ -1,0 +1,1 @@
+If you love detective games you like Something Fishy.
