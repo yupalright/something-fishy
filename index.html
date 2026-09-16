@@ -3299,7 +3299,7 @@ function enterUptown(){
   fish.rotation.y = AI.heading = AI.wantHeading = 0;   // facing up the street
   kitchenMode = false; officeMode = false; cornerMode = false;
   uptownMode = true;
-  invEl.classList.remove('on');
+  invEl.classList.toggle('on', taken.some(Boolean));   // the drawer's finds come along
   boxLatch = true;
   if (boxOpen) closeBox();
   camLook.set(UPTOWN.start, 3.4, -3);
@@ -4656,7 +4656,10 @@ const Battle = (function(){
     }
     if (s === 'dive'){
       diveFrom.copy(grabC);
-      diveX = bx + clamp(grabC.x - ARENA.x, -1, 1);
+      // wherever the grab happened, come down so the champion's hop lands
+      // him in the middle of the street shot, with the bouncer just right of it
+      const centerU = bx + (streetX - bx) / S;
+      diveX = centerU + (mechMode ? 0.75 : 0.45);
     }
     if (s === 'slam'){
       voidOn(false);
@@ -4665,7 +4668,7 @@ const Battle = (function(){
       B.pos.set(diveX, GROUND_Y + B.half);
       B.flat = 1; B.grounded = true; B.daze = 99; B.vel.set(0, 0);
       P.pos.set(diveX, GROUND_Y + B.size * 0.35 + P.half);
-      P.vel.set(-3.4, 9); P.grounded = false; P.landed = false;
+      P.vel.set(mechMode ? -2.4 : -1.6, 9); P.grounded = false; P.landed = false;
       crater.position.set(toW(diveX, 0, 0).x, GROUND_Y + 0.005, 0);
       crater.scale.setScalar(0.05 * S); crater.visible = true;
       dustRing.position.set(toW(diveX, 0, 0).x, GROUND_Y + 0.05, 0);
@@ -5290,7 +5293,7 @@ const Battle = (function(){
 // the title card builds. SAVE hands over a short code; LOAD takes one back and
 // reloads the page on it, so every load starts from a clean world.
 const MAIL_TO = 'mclean.jesse@gmail.com';
-const BUILD = 'v6';                    // shown small in MENU, to tell builds apart
+const BUILD = 'v7';                    // shown small in MENU, to tell builds apart
 
 // A save is 40 bits: version, scene, x, z, facing, the four drawer items, the
 // bouncer, and two spare. Eight characters of Crockford base 32 plus a check
@@ -5382,7 +5385,7 @@ function jumpTo(sv){
   if (sv.scene === 2){ kitchenT = KITCHEN.push + 2; camLook.x = fx * 0.3 - 0.6; camLook.z = fz * 0.25 - 1.15; }
   if (sv.scene === 3){ uptownT = 3; camLook.x = fx; }
   for (let i = 0; i < taken.length; i++) taken[i] = !!(sv.inv & (1 << i));
-  if (sv.scene !== 3 && taken.some(Boolean)) invEl.classList.add('on');
+  if (taken.some(Boolean)) invEl.classList.add('on');
   if (sv.won) Battle.setWon();
   boxLatch = true;
   Menu.fadeIn();
@@ -5395,17 +5398,22 @@ const Menu = (function(){
     '#menu{position:absolute;right:16px;bottom:7.5%;z-index:7;display:flex;flex-direction:column;',
     '  align-items:flex-end;gap:12px;transition:opacity .45s ease}',
     '#menu.away{opacity:0;pointer-events:none}',
-    '#menu button{background:none;border:0;border-bottom:1px solid currentColor;color:#fff;',
-    '  mix-blend-mode:difference;font-family:"Courier New",Courier,monospace;font-size:10px;',
+    '#menu button{background:none;border:0;border-bottom:1px solid currentColor;color:#fff;text-shadow:none;',
+    '  font-family:"Courier New",Courier,monospace;font-size:10px;',
     '  font-weight:700;letter-spacing:.26em;text-transform:uppercase;padding:3px 1px;cursor:pointer;opacity:.75}',
     '#menu button:hover,#menu button:focus-visible{opacity:1;outline:none}',
     '#menu button[aria-disabled="true"]{opacity:.3;cursor:default}',
     '#menulist{display:none;flex-direction:column;align-items:flex-end;gap:12px}',
     '#menu.open #menulist{display:flex}',
-    '#menumail{display:none;text-align:right;color:#fff;mix-blend-mode:difference;',
+    '#menumail{display:none;text-align:right;color:#fff;',
     '  font-family:"Courier New",Courier,monospace;font-size:11px;font-weight:700;line-height:1.6}',
     '#menumail.on{display:block}',
-    '#menuver{color:#fff;mix-blend-mode:difference;opacity:.35;font:700 8px "Courier New",Courier,monospace;letter-spacing:.2em}',
+    '#menuver{color:#fff;opacity:.35;font:700 8px "Courier New",Courier,monospace;letter-spacing:.2em}',
+    // black on the title screen, white everywhere after it
+    '#menu.dark button,#menu.dark #menumail,#menu.dark #menuver{color:#000}',
+    // INVENTORY steps aside for dialogue, same as MENU
+    '#inv{transition:opacity .35s ease}',
+    '#inv.boxed{opacity:0!important;pointer-events:none}',
     '#menumail .addr{letter-spacing:.08em;user-select:text;-webkit-user-select:text}',
     '#menumail .note{font-size:9px;letter-spacing:.22em;text-transform:uppercase;opacity:.7}',
     // the deco panel: white rule, black, a hairline, black; a stepped crown on top
@@ -5626,7 +5634,11 @@ const Menu = (function(){
   let streetSeen = false;
   function update(){
     if (cornerMode) streetSeen = true;
-    const away = cityMode && !streetSeen && cityT >= SEQ.fadeA;
+    // gone for the title build, and whenever a dialogue box is up
+    const talking = boxOpen || deco.classList.contains('on');
+    const away = (cityMode && !streetSeen && cityT >= SEQ.fadeA) || talking;
+    menu.classList.toggle('dark', !lit);
+    invEl.classList.toggle('boxed', talking || Battle.active);
     if (away && menu.classList.contains('open')) setOpen(false);
     menu.classList.toggle('away', away);
   }
