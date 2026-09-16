@@ -295,6 +295,21 @@
   </div>
 </div>
 
+<script>
+  // If anything stops the game from starting, show it rather than a blank page.
+  window.addEventListener('error', function (e) {
+    var d = document.getElementById('bootfail');
+    if (!d) {
+      d = document.createElement('div');
+      d.id = 'bootfail';
+      d.style.cssText = 'position:fixed;left:8px;right:8px;bottom:8px;z-index:99;font:11px/1.4 monospace;' +
+        'color:#ff9a9a;background:rgba(0,0,0,.88);padding:8px 10px;white-space:pre-wrap;pointer-events:none';
+      document.body.appendChild(d);
+    }
+    d.textContent += 'Something Fishy hit a snag: ' + (e.message || 'unknown error') +
+      (e.lineno ? ' (line ' + e.lineno + ')' : '') + '\n';
+  });
+</script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <script>
 /* ------------------------------------------------------------------ *
@@ -1041,7 +1056,7 @@ function updateFish(dt){
     const push = Math.max(0, Math.sin(AI.phase));
     const sp = play ? (uptownMode ? UPTOWN.speed : kitchenMode ? KITCHEN.speed
                        : officeMode ? OFFICE.speed : CORNER.speed)
-                      * Math.hypot(input.x, input.z)
+                      * Math.hypot(input.x, input.z) * (mechMode ? MECH_SPEED : 1)
                     : CONFIG.fish.speed;
     const step = sp * (play ? 1 : 0.3 + push * 1.2) * dt * MO;
     fish.position.x += Math.cos(AI.heading) * step;
@@ -1075,7 +1090,7 @@ function updateFish(dt){
   // a step lands each time the gait crosses a half cycle
   if (moving && play){
     const half = Math.floor(AI.phase / Math.PI);
-    if (half !== lastHalf){ lastHalf = half; if (mechMode) Music.thud(0.3); else Music.step(); }
+    if (half !== lastHalf){ lastHalf = half; if (!mechMode) Music.step(); }   // the suit stomps on its own
   }
   legR.rotation.z =  s * 0.8 * amp;
   legL.rotation.z = -s * 0.8 * amp;
@@ -3727,6 +3742,8 @@ skipEl.addEventListener('click', e => {
 
 // FishMech: after a win, the detective can go round again in the suit
 let mechMode = false;
+const MECH_BIG = 1.5;                  // the suit, against the battle's first mech
+const MECH_SPEED = 0.65;               // and slower, for the weight of it
 
 /* ------------------------------------------------------------ mech battle */
 // The one place the noir drops away. Choose to fight the bouncer and both fish
@@ -3968,7 +3985,7 @@ const Battle = (function(){
       k.add(Cyl(0.88, 0.82, 0.055, 10), 0x4f5155, M4(0, 0.02, 0, 0, 0, 0, 1, 1, 0.88), hat);
       k.add(Cyl(0.535, 0.545, 0.13, 9), 0x35373a, M4(0, 0.085, 0, 0, 0, 0, 1, 1, 0.87), hat);
     }
-    if (o.cig){
+    if (o.cig && !o.claw){
       const cg = hm.clone().multiply(M4(0.24, -0.10, 0.13, 0, 0, 0.15));
       k.add(Cyl(0.036, 0.036, 0.78, 5), 0xf2f2ee, M4(0.33, 0, 0, 0, 0, RX), cg);
       e.add(Cyl(0.038, 0.038, 0.075, 5), 0xff6a24, M4(0.75, 0, 0, 0, 0, RX), cg);
@@ -4013,6 +4030,7 @@ const Battle = (function(){
 
     // arms: two segments, a piston on each, and a two-finger clamp
     const arms = [];
+    let clawTip = null;
     [1, -1].forEach(s => {
       const sh = new THREE.Group();
       sh.position.set(0.12, TY - 0.02, 0.52 * s);
@@ -4048,10 +4066,20 @@ const Battle = (function(){
           .mesh(mat));
         return { piv, fs };
       });
-      arms.push({ sh, el, wr, fingers, a: -1.05, b: -0.35, c: -0.6, open: 0.25, lag: s > 0 ? 0 : 0.18 });
+      const hold = !!(o.claw && s > 0);
+      if (hold){                                       // pinched between the fingers
+        const cigM = new Kit().add(Cyl(0.022, 0.022, 0.46, 5), 0xf2f2ee, M4(0, -0.36, 0)).mesh(mat);
+        const ember = new Kit().add(Cyl(0.025, 0.025, 0.05, 5), 0xff6a24, M4(0, -0.6, 0)).mesh(unlit);
+        ember.castShadow = false;
+        wr.add(cigM, ember);
+        clawTip = new THREE.Object3D();
+        clawTip.position.set(0, -0.63, 0);
+        wr.add(clawTip);
+      }
+      arms.push({ sh, el, wr, fingers, hold, a: -1.05, b: -0.35, c: -0.6, open: 0.25, lag: s > 0 ? 0 : 0.18 });
     });
 
-    return { model, legs, arms, mat, k: 1, t: 0, air: 0, trail: 0 };
+    return { model, legs, arms, mat, clawTip, k: 1, t: 0, air: 0, trail: 0 };
   }
 
   // two-bone leg: the knee always folds backwards, the foot holds a set angle
@@ -4097,7 +4125,8 @@ const Battle = (function(){
     hitLight = new THREE.PointLight(0xffffff, 0, 9 * S, 2);
     root.add(hitLight);
 
-    P = makeFighter(1.4, DETECTIVE);
+    P = mechMode ? makeFighter(1.4 * MECH_BIG, Object.assign({}, DETECTIVE, { claw: true }))
+                 : makeFighter(1.4, DETECTIVE);
     B = makeFighter(1.8, {
       fishTop: 0x565656, fishLow: 0x2e2e2e, fishTail: 0x3d3d3d, fishFin: 0x353535,
       girth: [1.1, 1.3, 1.3], bowtie: PINK, arm: PINK, glow: PINK
@@ -4361,7 +4390,7 @@ const Battle = (function(){
       A.a += (ta - A.a) * kk;
       A.b += (tb - A.b) * kk;
       A.c += (tc - A.c) * kk;
-      A.open += (f.open - A.open) * Math.min(1, dt * 18);
+      A.open += ((A.hold ? Math.min(f.open, 0.1) : f.open) - A.open) * Math.min(1, dt * 18);
       A.sh.rotation.z = A.a + Math.PI / 2;
       A.el.rotation.z = A.b - A.a;
       A.wr.rotation.z = A.c - A.b;
@@ -4596,7 +4625,7 @@ const Battle = (function(){
         f.crouch = 0; f.bendT = -1; f.clackT = -1;
         uprightFighter(f);
       });
-      P.pos.set(bx - 1.1, 18); P.delay = 0;
+      P.pos.set(bx - (mechMode ? 1.6 : 1.1), 18); P.delay = 0;
       B.pos.set(bx + 1.1, 20); B.delay = 0.4;
     }
     if (s === 'standoff'){ P.clackT = -1; B.clackT = -1; }
@@ -4832,8 +4861,13 @@ const Battle = (function(){
   /* ---- camera */
   // a little further back than the walking camera, so both mechs fit
   function streetRig(pos, look, x, k){
-    pos.set(x, lerp(5.3, 4.7, k), lerp(28, 26, k));
-    look.set(x, lerp(3.1, 2.8, k), -4);
+    if (mechMode){
+      pos.set(x, lerp(6.0, 5.4, k), lerp(34, 31.5, k));
+      look.set(x, lerp(3.5, 3.2, k), -4);
+    } else {
+      pos.set(x, lerp(5.3, 4.7, k), lerp(28, 26, k));
+      look.set(x, lerp(3.1, 2.8, k), -4);
+    }
   }
   function fightRig(pos, look, fov, tight){
     const mx = (P.pos.x + B.pos.x) / 2, my = (P.pos.y + B.pos.y) / 2;
@@ -4846,7 +4880,7 @@ const Battle = (function(){
   }
   function updateCam(dt){
     let rate = T.camLag, fov = UPTOWN.fov;
-    streetX += (bx + 0.18 * S - streetX) * Math.min(1, dt * 2.5);
+    streetX += (bx + (mechMode ? -0.3 : 0.18) * S - streetX) * Math.min(1, dt * 2.5);
     if (state === 'challenge' || state === 'empty' || state === 'drop' || state === 'standoff'
         || state === 'slam' || state === 'done' || state === 'win' || state === 'exit'){
       streetRig(wantPos, wantLook, streetX, push);
@@ -5025,23 +5059,20 @@ const Battle = (function(){
     girth: [1, 1, 1], hat: true, cig: true, arm: 0xf2b200, glow: 0xffffff
   };
   // world height per scene: street size outside, smaller in the rooms
-  const WALK_SIZE = [2.3, 1.7, 1.7, 1.4 * S];
+  const WALK_SIZE = [2.3, 1.7, 1.7, 1.4 * S].map(v => v * MECH_BIG);
+  const STRIDE = 0.34;                        // model units either side of the hip
   let walker = null;
   function makeWalker(){
-    const R = buildMech(DETECTIVE);
+    const R = buildMech(Object.assign({}, DETECTIVE, { claw: true }));
     R.model.traverse(o => { if (o.isMesh) o.receiveShadow = false; });
     const g = new THREE.Group();
     g.add(R.model);
     g.visible = false;
     scene.add(g);
-    // where the cigarette ends, in model units, so the smoke can start there
-    const fm = M4(0.05, TY + 0.02, 0, 0, 0, 0, 0.5);
-    const cg = fm.multiply(M4(0.55, 0.06, 0)).multiply(M4(0.24, -0.10, 0.13, 0, 0, 0.15));
-    const tip = new THREE.Vector3(0.8, 0, 0).applyMatrix4(cg);
-    return { g, R, tip, lx: fish.position.x, lz: fish.position.z, move: 0 };
+    return { g, R, lx: fish.position.x, lz: fish.position.z, move: 0, phase: 0, half: 0 };
   }
   function poseWalker(W, dt){
-    const R = W.R, m = W.move, p = AI.phase;
+    const R = W.R, m = W.move, p = W.phase;
     R.t += dt;
     // weight comes down on each footfall
     const dip = (1 - Math.abs(Math.sin(p))) * 0.06 * m + Math.sin(R.t * 1.6) * 0.008 * (1 - m);
@@ -5049,17 +5080,33 @@ const Battle = (function(){
     R.model.rotation.z = -0.07 * m;
     R.model.rotation.x = Math.sin(p) * 0.05 * m;
     R.legs.forEach(L => {
-      const ph = p + L.ph;
-      const x = -Math.cos(ph) * 0.3 * m;              // swing forward, plant, push back
-      const lift = Math.max(0, Math.sin(ph)) * 0.24 * m;
-      legIK(L, 0.05 + x, -(0.84 - dip) + lift, -lift * 0.9);
+      // Half the cycle the foot swings forward through the air; the other half
+      // it's planted and slides back at exactly the body's speed, so it holds.
+      const ph = ((p + L.ph) % (Math.PI * 2) + Math.PI * 2) % (Math.PI * 2);
+      let x, lift;
+      if (ph < Math.PI){
+        const u = ph / Math.PI;
+        x = -STRIDE + 2 * STRIDE * u * u * (3 - 2 * u);
+        lift = Math.sin(ph) * 0.24;
+      } else {
+        x = STRIDE * (1 - 2 * (ph - Math.PI) / Math.PI);
+        lift = 0;
+      }
+      legIK(L, 0.05 + x * m, -(0.84 - dip) + lift * m, -lift * m * 0.9);
     });
     const kk = Math.min(1, dt * 10);
     R.arms.forEach((A, i) => {
       const swing = Math.sin(p + (i ? 0 : Math.PI)) * 0.3 * m;
-      A.a += (-1.05 + swing - A.a) * kk;
-      A.b += (-0.35 + swing * 0.6 - A.b) * kk;
-      A.c += (-0.6 + swing * 0.4 - A.c) * kk;
+      if (A.hold){                                     // cigarette up, like he means it
+        const draw = Math.sin(R.t * 0.7) * 0.06;
+        A.a += (-0.9 + swing * 0.25 - A.a) * kk;
+        A.b += (0.5 + draw - A.b) * kk;
+        A.c += (1.25 + draw - A.c) * kk;
+      } else {
+        A.a += (-1.05 + swing - A.a) * kk;
+        A.b += (-0.35 + swing * 0.6 - A.b) * kk;
+        A.c += (-0.6 + swing * 0.4 - A.c) * kk;
+      }
       A.open += (0.2 - A.open) * kk;
       A.sh.rotation.z = A.a + Math.PI / 2;
       A.el.rotation.z = A.b - A.a;
@@ -5071,8 +5118,8 @@ const Battle = (function(){
     if (!mechMode){ if (walker) walker.g.visible = false; return; }
     if (!walker){
       walker = makeWalker();
-      walker.R.model.add(cigTip);                    // smoke from the mech's cigarette
-      cigTip.position.copy(walker.tip);
+      walker.R.clawTip.parent.add(cigTip);           // smoke from the cigarette in its claw
+      cigTip.position.copy(walker.R.clawTip.position);
     }
     rig.visible = false;                             // the fish is aboard, drawn by the mech
     const sc = currentScene();
@@ -5086,7 +5133,14 @@ const Battle = (function(){
     walker.g.rotation.y = fish.rotation.y;
     const sp = Math.hypot(fish.position.x - walker.lx, fish.position.z - walker.lz) / dt;
     walker.lx = fish.position.x; walker.lz = fish.position.z;
-    walker.move += ((sp > 0.3 && sp < 30 ? 1 : 0) - walker.move) * Math.min(1, dt * 8);
+    const moving = sp > 0.3 && sp < 30;
+    walker.move += ((moving ? 1 : 0) - walker.move) * Math.min(1, dt * 8);
+    if (moving){
+      // half a cycle per stride: a foot travels 2 x STRIDE, scaled, while it's down
+      walker.phase += sp * dt / (2 * STRIDE * R.k) * Math.PI;
+      const half = Math.floor(walker.phase / Math.PI);
+      if (half !== walker.half){ walker.half = half; Music.thud(0.32); }
+    }
     poseWalker(walker, dt);
   }
 
@@ -5236,6 +5290,7 @@ const Battle = (function(){
 // the title card builds. SAVE hands over a short code; LOAD takes one back and
 // reloads the page on it, so every load starts from a clean world.
 const MAIL_TO = 'mclean.jesse@gmail.com';
+const BUILD = 'v4';                    // shown small in MENU, to tell builds apart
 
 // A save is 40 bits: version, scene, x, z, facing, the four drawer items, the
 // bouncer, and two spare. Eight characters of Crockford base 32 plus a check
@@ -5290,8 +5345,10 @@ function currentScene(){
   return cornerMode ? 0 : officeMode ? 1 : kitchenMode ? 2 : uptownMode ? 3 : -1;
 }
 function canSave(){
-  return currentScene() >= 0 && !Battle.active && travelT < 0 && doorT < 0
-      && kitchenT2 < 0 && !autoIn && !autoIn2;
+  // the door clocks keep counting after the new room loads, so they only
+  // mean "in a doorway" while the room they belong to is still showing
+  return currentScene() >= 0 && !Battle.active && travelT < 0 && !autoIn && !autoIn2
+      && !(cornerMode && doorT >= 0) && !(officeMode && kitchenT2 >= 0);
 }
 function makeSave(){
   return SaveCode.encode({
@@ -5347,6 +5404,7 @@ const Menu = (function(){
     '#menumail{display:none;text-align:right;color:#fff;mix-blend-mode:difference;',
     '  font-family:"Courier New",Courier,monospace;font-size:11px;font-weight:700;line-height:1.6}',
     '#menumail.on{display:block}',
+    '#menuver{color:#fff;mix-blend-mode:difference;opacity:.35;font:700 8px "Courier New",Courier,monospace;letter-spacing:.2em}',
     '#menumail .addr{letter-spacing:.08em;user-select:text;-webkit-user-select:text}',
     '#menumail .note{font-size:9px;letter-spacing:.22em;text-transform:uppercase;opacity:.7}',
     // the deco panel: white rule, black, a hairline, black; a stepped crown on top
@@ -5415,6 +5473,7 @@ const Menu = (function(){
       '<button type="button" data-m="load">Load</button>' +
       '<button type="button" data-m="contact">Contact</button>' +
       '<div id="menumail" aria-live="polite"><div class="addr">' + MAIL_TO + '</div><div class="note"></div></div>' +
+      '<div id="menuver">' + BUILD + '</div>' +
     '</div>' +
     '<button type="button" id="menubtn" aria-expanded="false">Menu</button>';
   stage.appendChild(menu);
