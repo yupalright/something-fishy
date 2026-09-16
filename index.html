@@ -81,7 +81,7 @@
   }
   #sound:hover,#sound:focus-visible{opacity:1;outline:none}
   #inv{
-    position:absolute;left:16px;bottom:16px;z-index:6;display:none;
+    position:absolute;left:16px;bottom:7.5%;z-index:6;display:none;   /* level with MENU */
     background:none;border:0;border-bottom:1px solid currentColor;
     color:#fff;mix-blend-mode:difference;
     font-family:"Courier New",Courier,monospace;
@@ -5290,7 +5290,7 @@ const Battle = (function(){
 // the title card builds. SAVE hands over a short code; LOAD takes one back and
 // reloads the page on it, so every load starts from a clean world.
 const MAIL_TO = 'mclean.jesse@gmail.com';
-const BUILD = 'v4';                    // shown small in MENU, to tell builds apart
+const BUILD = 'v6';                    // shown small in MENU, to tell builds apart
 
 // A save is 40 bits: version, scene, x, z, facing, the four drawer items, the
 // bouncer, and two spare. Eight characters of Crockford base 32 plus a check
@@ -5391,7 +5391,8 @@ function jumpTo(sv){
 const Menu = (function(){
   const css = document.createElement('style');
   css.textContent = [
-    '#menu{position:absolute;right:16px;bottom:16px;z-index:7;display:flex;flex-direction:column;',
+    // lifted to the same line as PRESENTED BY: phone browsers crop the bottom edge
+    '#menu{position:absolute;right:16px;bottom:7.5%;z-index:7;display:flex;flex-direction:column;',
     '  align-items:flex-end;gap:12px;transition:opacity .45s ease}',
     '#menu.away{opacity:0;pointer-events:none}',
     '#menu button{background:none;border:0;border-bottom:1px solid currentColor;color:#fff;',
